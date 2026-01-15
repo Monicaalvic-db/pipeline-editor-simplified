@@ -1543,6 +1543,7 @@ export default function PipelineEditorPage() {
   const followUpInput = chatInput;
   const setFollowUpInput = setChatInput;
   const isFollowUpThinking = isAIThinking;
+  const setIsFollowUpThinking = setIsAIThinking;
   
   // Modal states
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
@@ -2572,7 +2573,7 @@ FROM ${sourceName}`;
     setExpandedFolders(prev => new Set([...prev, "2"]));
     
     // Store generated content
-    generatedContentsRef.current[newFileId] = generatedCode;
+    generatedContentsRef.current[newFileId] = { content: generatedCode, language: "python" };
     
     // Create and open new tab with generated code
     const newTab: EditorTab = {
@@ -2690,11 +2691,11 @@ FROM ${sourceName}`;
         const currentContent = generatedContentsRef.current[editingTabId];
         if (currentContent) {
           // Update the view/table name in the code
-          const updatedContent = currentContent.replace(
+          const updatedContent = currentContent.content.replace(
             /(CREATE\s+(?:MATERIALIZED\s+VIEW|STREAMING\s+TABLE|VIEW)\s+)\S+/i,
             `$1${baseName}`
           );
-          generatedContentsRef.current[editingTabId] = updatedContent;
+          generatedContentsRef.current[editingTabId] = { content: updatedContent, language: currentContent.language };
           
           // Update the open tab content
           setOpenTabs(tabs => tabs.map(tab => 
@@ -6962,10 +6963,6 @@ def my_persisted_view():
                   {activeRightPanel === "comments" && "Comments"}
                   {activeRightPanel === "history" && "Version History"}
                   {activeRightPanel === "assistant" && "Assistant"}
-                  {activeRightPanel === "graph" && "Pipeline Graph"}
-                  {activeRightPanel === "tables" && "Tables"}
-                  {activeRightPanel === "performance" && "Performance"}
-                  {activeRightPanel === "terminal" && "Terminal"}
                 </span>
                 <div className="flex items-center gap-1">
                   {/* Close button for docked panels - returns to bottom */}
@@ -7005,145 +7002,6 @@ def my_persisted_view():
                   <div className="flex-1 p-3 overflow-auto text-sm text-muted-foreground">
                     <p>Version history will appear here.</p>
                     <p className="mt-2">Save your pipeline to create versions.</p>
-                  </div>
-                )}
-                {/* Docked panels content in right sidebar */}
-                {activeRightPanel === "graph" && rightDockedPanels.includes("graph") && (
-                  graphData.nodes.length > 0 ? (
-                    // Show actual graph when data available (compact view for right panel)
-                    <div 
-                      className="flex-1 relative overflow-hidden"
-                      style={{
-                        backgroundImage: 'radial-gradient(circle, var(--color-grey-300) 1px, transparent 1px)',
-                        backgroundSize: '16px 16px',
-                        backgroundPosition: `${graphPan.x % 16}px ${graphPan.y % 16}px`,
-                        cursor: isDraggingGraph ? 'grabbing' : 'grab',
-                      }}
-                      onMouseDown={(e) => {
-                        if (e.button === 0) {
-                          setIsDraggingGraph(true);
-                          graphDragStart.current = { x: e.clientX - graphPan.x, y: e.clientY - graphPan.y };
-                        }
-                      }}
-                      onMouseMove={(e) => {
-                        if (isDraggingGraph && graphDragStart.current) {
-                          setGraphPan({
-                            x: e.clientX - graphDragStart.current.x,
-                            y: e.clientY - graphDragStart.current.y,
-                          });
-                        }
-                      }}
-                      onMouseUp={() => {
-                        setIsDraggingGraph(false);
-                        graphDragStart.current = null;
-                      }}
-                      onMouseLeave={() => {
-                        setIsDraggingGraph(false);
-                        graphDragStart.current = null;
-                      }}
-                      onWheel={(e) => {
-                        e.preventDefault();
-                        const delta = e.deltaY > 0 ? 0.9 : 1.1;
-                        setGraphZoom(prev => Math.min(Math.max(prev * delta, 0.25), 2));
-                      }}
-                    >
-                      {/* Zoom controls */}
-                      <div className="absolute top-2 right-2 flex items-center gap-1 z-10 bg-background/90 rounded px-1.5 py-0.5 border shadow-sm">
-                        <button className="p-0.5 hover:bg-muted rounded" onClick={() => setGraphZoom(prev => Math.max(prev * 0.8, 0.25))}>
-                          <Minus className="h-3 w-3" />
-                        </button>
-                        <span className="text-[10px] font-medium min-w-[2rem] text-center">{Math.round(graphZoom * 100)}%</span>
-                        <button className="p-0.5 hover:bg-muted rounded" onClick={() => setGraphZoom(prev => Math.min(prev * 1.2, 2))}>
-                          <Plus className="h-3 w-3" />
-                        </button>
-                      </div>
-                      {/* SVG edges */}
-                      <svg 
-                        className="absolute inset-0 w-full h-full pointer-events-none"
-                        style={{ 
-                          transform: `translate(${graphPan.x}px, ${graphPan.y}px) scale(${graphZoom * 0.6})`,
-                          transformOrigin: '0 0',
-                        }}
-                      >
-                        {graphData.edges.map(edge => {
-                          const sourceNode = graphData.nodes.find(n => n.id === edge.source);
-                          const targetNode = graphData.nodes.find(n => n.id === edge.target);
-                          if (!sourceNode || !targetNode) return null;
-                          const nodeWidth = 200;
-                          const cardHeight = 60;
-                          const startX = sourceNode.position.x + nodeWidth;
-                          const startY = sourceNode.position.y + cardHeight / 2;
-                          const endX = targetNode.position.x;
-                          const endY = targetNode.position.y + cardHeight / 2;
-                          const midX = (startX + endX) / 2;
-                          return (
-                            <g key={edge.id}>
-                              <path d={`M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`} fill="none" stroke="#9ca3af" strokeWidth={2} />
-                              <polygon points={`${endX},${endY} ${endX - 8},${endY - 4} ${endX - 8},${endY + 4}`} fill="#9ca3af" />
-                            </g>
-                          );
-                        })}
-                      </svg>
-                      {/* Nodes */}
-                      <div 
-                        className="absolute inset-0 pointer-events-none"
-                        style={{ 
-                          transform: `translate(${graphPan.x}px, ${graphPan.y}px) scale(${graphZoom * 0.6})`,
-                          transformOrigin: '0 0',
-                        }}
-                      >
-                        {graphData.nodes.filter(n => !n.isPlaceholder).map(node => (
-                          <div
-                            key={node.id}
-                            className="absolute pointer-events-auto"
-                            style={{ left: node.position.x, top: node.position.y, width: 200 }}
-                          >
-                            <div className="rounded bg-background border shadow-sm p-2">
-                              <div className="flex items-center gap-1.5">
-                                <div className={`w-1.5 h-1.5 rounded-full ${
-                                  node.status === 'success' ? 'bg-green-500' :
-                                  node.status === 'warning' ? 'bg-yellow-500' : 'bg-red-500'
-                                }`} />
-                                <span className="font-medium text-xs truncate">{node.name}</span>
-                              </div>
-                              <div className="mt-1 text-[10px] text-muted-foreground">{node.outputRecords}</div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex-1 p-3 overflow-auto">
-                      <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground">
-                        <GitFork className="h-12 w-12 mb-3 opacity-50" />
-                        <p className="font-medium">Pipeline Graph</p>
-                        <p className="text-xs mt-1">Run the pipeline to see the graph visualization</p>
-                      </div>
-                    </div>
-                  )
-                )}
-                {activeRightPanel === "tables" && rightDockedPanels.includes("tables") && (
-                  <div className="flex-1 p-3 overflow-auto">
-                    <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground">
-                      <Table className="h-12 w-12 mb-3 opacity-50" />
-                      <p className="font-medium">Tables</p>
-                      <p className="text-xs mt-1">Run the pipeline to see table results</p>
-                    </div>
-                  </div>
-                )}
-                {activeRightPanel === "performance" && rightDockedPanels.includes("performance") && (
-                  <div className="flex-1 p-3 overflow-auto">
-                    <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground">
-                      <Activity className="h-12 w-12 mb-3 opacity-50" />
-                      <p className="font-medium">Performance</p>
-                      <p className="text-xs mt-1">Run the pipeline to see performance metrics</p>
-                    </div>
-                  </div>
-                )}
-                {activeRightPanel === "terminal" && rightDockedPanels.includes("terminal") && (
-                  <div className="flex-1 bg-gray-900 text-gray-100 font-mono text-sm p-3 overflow-auto">
-                    <div className="text-green-400">$ _</div>
-                    <div className="text-gray-500 mt-2">Terminal ready</div>
                   </div>
                 )}
                 {activeRightPanel === "assistant" && (

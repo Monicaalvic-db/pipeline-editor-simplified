@@ -1,0 +1,6 @@
+{
+  "buildCommand": "cd pipeline-simplified && npm run build",
+  "devCommand": "cd pipeline-simplified && npm run dev",
+  "installCommand": "cd pipeline-simplified && npm install",
+  "outputDirectory": "pipeline-simplified/.next"
+}
