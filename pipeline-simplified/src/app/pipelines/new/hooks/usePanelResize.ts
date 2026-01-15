@@ -74,9 +74,9 @@ export function usePanelResize({
   onRightPanelClose,
   onBottomPanelClose,
 }: UsePanelResizeOptions): UsePanelResizeReturn {
-  const [leftWidth, setLeftWidth] = useState(PANEL_SIZES.left.default);
-  const [rightWidth, setRightWidth] = useState(PANEL_SIZES.right.default);
-  const [bottomHeight, setBottomHeight] = useState(PANEL_SIZES.bottom.default);
+  const [leftWidth, setLeftWidth] = useState<number>(PANEL_SIZES.left.default);
+  const [rightWidth, setRightWidth] = useState<number>(PANEL_SIZES.right.default);
+  const [bottomHeight, setBottomHeight] = useState<number>(PANEL_SIZES.bottom.default);
   
   const [isResizingLeft, setIsResizingLeft] = useState(false);
   const [isResizingRight, setIsResizingRight] = useState(false);
