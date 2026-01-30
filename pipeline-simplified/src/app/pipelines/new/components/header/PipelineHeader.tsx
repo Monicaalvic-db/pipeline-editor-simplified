@@ -19,7 +19,22 @@ import {
   Share2,
   Square,
   ChevronDown,
+  MoreVertical,
+  ExternalLink,
+  Trash2,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
 import type { PipelineState } from "../../types";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -154,36 +169,60 @@ export function PipelineHeader({
           className="h-7 gap-1.5"
           disabled={isDisabled}
         >
-          <div className="h-2 w-2 rounded-full bg-green-500 lg:hidden" />
-          <span className="hidden lg:inline">Compute</span>
-        </Button>
-        <Button 
-          variant="outline" 
-          size="sm" 
-          className="h-7 gap-1.5"
-          disabled={isDisabled}
-        >
           <Settings className="h-3.5 w-3.5 lg:hidden" />
           <span className="hidden lg:inline">Settings</span>
         </Button>
-        <Button 
-          variant="outline" 
-          size="sm" 
-          className="h-7 gap-1.5"
-          disabled={isDisabled}
-        >
-          <Calendar className="h-3.5 w-3.5 lg:hidden" />
-          <span className="hidden lg:inline">Schedule</span>
-        </Button>
-        <Button 
-          variant="outline" 
-          size="sm" 
-          className="h-7 gap-1.5"
-          disabled={isDisabled}
-        >
-          <Share2 className="h-3.5 w-3.5 lg:hidden" />
-          <span className="hidden lg:inline">Share</span>
-        </Button>
+        
+        {/* Overflow menu */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="h-7 w-7 p-0"
+              disabled={isDisabled}
+            >
+              <MoreVertical className="h-3.5 w-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem>
+              <Calendar className="h-3.5 w-3.5" />
+              Schedule
+            </DropdownMenuItem>
+            <DropdownMenuItem>
+              <Share2 className="h-3.5 w-3.5" />
+              Share
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem>
+              <ExternalLink className="h-3.5 w-3.5" />
+              Go to monitoring
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive">
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete pipeline
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        
+        {/* Compute button with tooltip */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="h-7 w-7 p-0"
+              disabled={isDisabled}
+            >
+              <div className="h-2 w-2 rounded-full bg-green-500" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Pipeline compute</p>
+          </TooltipContent>
+        </Tooltip>
         
         {/* Dry Run / Stop (for dry run) */}
         {isRunningDryRun ? (

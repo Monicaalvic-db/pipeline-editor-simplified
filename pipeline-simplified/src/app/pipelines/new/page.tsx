@@ -113,6 +113,7 @@ import {
   Check,
   Maximize,
   Minus,
+  MinusCircle,
   RotateCcw,
   ExternalLink,
 } from "lucide-react";
@@ -133,6 +134,11 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
 
 // ═══════════════════════════════════════════════════════════════════
 // NOTE: The types and utility functions below are also available from:
@@ -193,7 +199,7 @@ const PIPELINE_STAGES = [
 // Table result type for bottom panel
 type TableResult = {
   id: string;
-  status: 'success' | 'warning' | 'failed';
+  status: 'success' | 'warning' | 'failed' | 'skipped';
   name: string;
   type: 'Streaming table' | 'Materialized view' | 'Persisted view' | 'Sink' | 'External source';
   duration: string;
@@ -1582,7 +1588,7 @@ export default function PipelineEditorPage() {
   const [tableResults, setTableResults] = useState<TableResult[]>([]);
   const [runHistory, setRunHistory] = useState<RunHistoryEntry[]>([]);
   const [tableSearchFilter, setTableSearchFilter] = useState("");
-  const [tableStatusFilter, setTableStatusFilter] = useState<'all' | 'success' | 'warning' | 'failed'>('all');
+  const [tableStatusFilter, setTableStatusFilter] = useState<'all' | 'success' | 'warning' | 'failed' | 'skipped'>('all');
   const [tableTypeFilter, setTableTypeFilter] = useState<'all' | 'Streaming table' | 'Materialized view' | 'Persisted view' | 'Sink'>('all');
   const [tableSortConfig, setTableSortConfig] = useState<{ column: string; direction: 'asc' | 'desc' }>({ column: 'name', direction: 'asc' });
   const [showResultsView, setShowResultsView] = useState(false); // Controls transition from completed message to results
@@ -1593,6 +1599,7 @@ export default function PipelineEditorPage() {
   const [tablePreviewTab, setTablePreviewTab] = useState<'data' | 'columns' | 'metrics' | 'performance'>('data');
   const [tablePreviewRowLimit, setTablePreviewRowLimit] = useState(100);
   const [isLoadingTablePreview, setIsLoadingTablePreview] = useState(false);
+  const [tablePreviewSource, setTablePreviewSource] = useState<'graph' | 'tables'>('tables');
   
   // Pipeline Graph state
   const [graphData, setGraphData] = useState<PipelineGraph>({ nodes: [], edges: [] });
@@ -1733,10 +1740,11 @@ export default function PipelineEditorPage() {
   }, []);
 
   // Open table data preview
-  const openTablePreview = useCallback((table: TableResult) => {
+  const openTablePreview = useCallback((table: TableResult, source: 'graph' | 'tables' = 'tables') => {
     setSelectedTableForPreview(table);
     setTablePreviewTab('data');
     setIsLoadingTablePreview(true);
+    setTablePreviewSource(source);
     
     // Simulate loading data
     setTimeout(() => {
@@ -1746,12 +1754,19 @@ export default function PipelineEditorPage() {
     }, 500);
   }, []);
 
-  // Close table preview and return to results list
+  // Close table preview and return to results list or graph
   const closeTablePreview = useCallback(() => {
+    // Switch to the appropriate tab based on source
+    if (tablePreviewSource === 'graph') {
+      setBottomPanelTab('graph');
+    } else {
+      setBottomPanelTab('tables');
+    }
+    
     setSelectedTableForPreview(null);
     setTablePreviewData(null);
     setTablePreviewTab('data');
-  }, []);
+  }, [tablePreviewSource]);
 
   // Refresh table preview data
   const refreshTablePreview = useCallback(() => {
@@ -2621,14 +2636,68 @@ FROM ${sourceName}`;
     }
   }, [graphData, graphZoom, graphPan, placeholderCounter, generateDependentCode, scrollToTabAndEdit]);
 
-  const createNewFile = useCallback(() => {
-    const newId = `new-${Date.now()}`;
-    const newName = "untitled.py";
+  const createNewFile = useCallback((fileType: 'transformation' | 'exploration' | 'utility' = 'transformation') => {
+    const timestamp = Date.now();
+    let newId: string;
+    let newName: string;
+    let folderName: string;
+    let folderId: string;
+    let language: string;
+    
+    // Determine file properties based on type
+    switch (fileType) {
+      case 'exploration':
+        newId = `exploration-${timestamp}`;
+        newName = "untitled_exploration.ipynb";
+        folderName = "explorations";
+        folderId = "explorations-folder";
+        language = "python";
+        break;
+      case 'utility':
+        newId = `utility-${timestamp}`;
+        newName = "untitled_utility.py";
+        folderName = "utilities";
+        folderId = "utilities-folder";
+        language = "python";
+        break;
+      case 'transformation':
+      default:
+        newId = `transformation-${timestamp}`;
+        newName = "untitled_transformation.py";
+        folderName = "transformations";
+        folderId = "2";
+        language = "python";
+        break;
+    }
+    
+    // Add file to the appropriate folder in file tree
+    setFileTree(prev => {
+      const updateTree = (items: TreeItem[]): TreeItem[] => {
+        return items.map(item => {
+          if (item.type === "folder" && item.name === folderName) {
+            return {
+              ...item,
+              children: [...(item as FolderItem).children, { id: newId, name: newName, type: "file" as const }]
+            };
+          }
+          if (item.type === "folder") {
+            return { ...item, children: updateTree((item as FolderItem).children) };
+          }
+          return item;
+        });
+      };
+      return updateTree(prev);
+    });
+    
+    // Ensure the folder is expanded
+    setExpandedFolders(prev => new Set([...prev, folderId]));
+    
+    // Create and open new tab
     const newTab: EditorTab = {
       id: newId,
       name: newName,
       content: "",
-      language: "python",
+      language: language,
       isDirty: true,
       savedContent: "",
     };
@@ -2636,7 +2705,7 @@ FROM ${sourceName}`;
     setOpenTabs((prev) => [...prev, newTab]);
     setActiveTabId(newId);
     setShowEmptyState(true);
-        setShowQuickActions(true);
+    setShowQuickActions(true);
     
     // Scroll to the new tab and start editing
     scrollToTabAndEdit(newId, newName);
@@ -3345,6 +3414,178 @@ FROM main.samples.${primaryTable};`;
     // Otherwise, proceed with run
     executePipeline(type);
   }, [canRunPipeline, shouldShowFirstRunModal, selectedCatalog, selectedSchema, executePipeline]);
+
+  // Run single file - executes only the current file
+  const runSingleFile = useCallback(async () => {
+    if (!canRunPipeline()) return;
+    if (!activeTabId) return;
+    
+    // Get the active tab
+    const activeTab = openTabs.find(tab => tab.id === activeTabId);
+    if (!activeTab) return;
+    
+    // Check if should show first-run modal
+    if (shouldShowFirstRunModal()) {
+      // For now, we'll just show a simple prompt - could extend this later
+      setModalCatalog(selectedCatalog);
+      setModalSchema(selectedSchema);
+      setShowFirstRunModal(true);
+      return;
+    }
+    
+    // Create abort controller for this run
+    pipelineAbortController.current = new AbortController();
+    const signal = pipelineAbortController.current.signal;
+    
+    // Start execution
+    setPipelineState({
+      status: 'running',
+      type: 'run',
+      startTime: new Date(),
+      progress: 0,
+      currentStage: 'Initializing...'
+    });
+    
+    // Reset and start duration counter
+    setExecutionDuration(0);
+    durationIntervalRef.current = setInterval(() => {
+      setExecutionDuration(prev => prev + 1);
+    }, 1000);
+    
+    // Auto-open bottom panel and switch to Tables tab
+    setIsBottomPanelOpen(true);
+    setBottomPanelTab('tables');
+    setShowResultsView(false);
+    
+    try {
+      // Simulate execution stages
+      let currentProgress = 0;
+      
+      for (const stage of PIPELINE_STAGES.slice(0, 2)) { // Only use first 2 stages for single file
+        setPipelineState(prev => ({
+          ...prev,
+          currentStage: stage.status,
+        } as PipelineState));
+        
+        await animateProgress(currentProgress, stage.targetProgress, stage.duration, signal);
+        currentProgress = stage.targetProgress;
+      }
+      
+      // Parse only the current file's tables
+      const currentFileTables = parseTablesFromCode(
+        [activeTab],
+        generatedContentsRef.current,
+        sampleCodeContents,
+        fileContents,
+        new Set([activeTabId])
+      );
+      
+      // Get existing tables to mark as skipped
+      const existingTableNames = new Set(tableResults.map(t => t.name));
+      const newTableNames = new Set(currentFileTables.map(t => t.name));
+      
+      // Generate results for the current file
+      const newTableResults = currentFileTables.map((table, index) => {
+        const isStreaming = table.name.toLowerCase().includes('stream') || 
+                           table.name.toLowerCase().includes('raw') ||
+                           table.name.toLowerCase().includes('cleaned');
+        
+        return {
+          id: `table-${table.name}`,
+          status: 'success' as const,
+          name: table.name,
+          type: isStreaming ? 'Streaming table' as const : 'Materialized view' as const,
+          duration: `${10 + index * 8}s`,
+          written: `${Math.floor(Math.random() * 50 + 5)}K`,
+          updated: `${Math.floor(Math.random() * 10 + 1)}K`,
+          expectations: 'Not defined',
+          dropped: 0,
+          warnings: 0,
+          failed: 0,
+          fileId: table.fileId,
+        };
+      });
+      
+      // Mark existing tables as skipped (unless they're in the new results)
+      const skippedResults = tableResults
+        .filter(result => !newTableNames.has(result.name))
+        .map(result => ({
+          ...result,
+          status: 'skipped' as const,
+        }));
+      
+      // Combine: new results first, then skipped ones
+      const combinedResults = [...newTableResults, ...skippedResults];
+      
+      // Complete the progress
+      await animateProgress(currentProgress, 100, 800, signal);
+      
+      // Set final results
+      setTableResults(combinedResults);
+      
+      // Generate graph with all tables
+      const allParsedTables = [
+        ...currentFileTables,
+        ...parseTablesFromCode(openTabs, generatedContentsRef.current, sampleCodeContents, fileContents)
+          .filter(t => !newTableNames.has(t.name))
+      ];
+      setGraphData(prevGraph => generateGraphFromCode(allParsedTables, combinedResults, prevGraph));
+      
+      // Add to run history
+      const historyEntry: RunHistoryEntry = {
+        id: `run-${Date.now()}`,
+        timestamp: new Date(),
+        status: 'success',
+        duration: executionDuration,
+        type: 'run',
+        tablesProcessed: currentFileTables.length,
+      };
+      setRunHistory(prev => [historyEntry, ...prev].slice(0, 50));
+      
+      // Complete execution
+      if (durationIntervalRef.current) {
+        clearInterval(durationIntervalRef.current);
+        durationIntervalRef.current = null;
+      }
+      
+      // Clean up abort controller
+      pipelineAbortController.current = null;
+      
+      setPipelineState({ 
+        status: 'completed', 
+        duration: executionDuration,
+        type: 'run'
+      });
+      
+      // Show results view after a brief delay, then open preview
+      setTimeout(() => {
+        setShowResultsView(true);
+        
+        // Automatically open data preview for the first newly created table
+        if (newTableResults.length > 0) {
+          setTimeout(() => {
+            openTablePreview(newTableResults[0], 'tables');
+          }, 300);
+        }
+      }, 500);
+      
+    } catch (error) {
+      // Handle errors
+      if (durationIntervalRef.current) {
+        clearInterval(durationIntervalRef.current);
+        durationIntervalRef.current = null;
+      }
+      
+      // Clean up abort controller
+      pipelineAbortController.current = null;
+      
+      setPipelineState({
+        status: 'error',
+        error: 'Pipeline execution failed'
+      });
+    }
+  }, [canRunPipeline, activeTabId, openTabs, shouldShowFirstRunModal, selectedCatalog, selectedSchema, 
+      animateProgress, tableResults, executionDuration, generatedContentsRef, sampleCodeContents, fileContents, openTablePreview]);
 
   // Handle running from the first-run modal
   const handleRunFromModal = useCallback(() => {
@@ -4441,56 +4682,98 @@ FROM main.samples.${primaryTable};`;
               className="h-7 text-sm font-medium w-64 px-2"
             />
           ) : (
-            <button
-              onClick={() => setIsEditingName(true)}
-              className="flex items-center gap-1.5 hover:bg-accent px-2 py-1 rounded text-sm font-medium truncate group"
-            >
-              <span className="truncate">{pipelineName}</span>
-              <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 flex-shrink-0" />
-            </button>
-          )}
-
-          <div className="flex items-center gap-1.5 text-sm text-muted-foreground flex-shrink-0">
-            <button
-              onClick={() => {
-                setTempCatalog(selectedCatalog);
-                setTempSchema(selectedSchema);
-                setIsConfigPanelOpen(true);
-              }}
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/50 hover:bg-muted transition-colors cursor-pointer"
-              title="Configure catalog and schema"
-            >
-              <Database className="h-3 w-3" />
-              <span>{selectedCatalog}</span>
-            </button>
-            <span>·</span>
-            <button
-              onClick={() => {
-                setTempCatalog(selectedCatalog);
-                setTempSchema(selectedSchema);
-                setIsConfigPanelOpen(true);
-              }}
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/50 hover:bg-muted transition-colors cursor-pointer"
-              title="Configure catalog and schema"
-            >
-              <Database className="h-3 w-3" />
-              <span>{selectedSchema}</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          {/* Secondary actions - icons only on small screens, text only on large screens */}
-          {/* Disabled during pipeline execution */}
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="h-7 gap-1.5"
-            disabled={pipelineState.status === 'running' || pipelineState.status === 'stopping'}
+          <button
+            onClick={() => setIsEditingName(true)}
+            className="flex items-center gap-1.5 hover:bg-accent px-2 py-1 rounded text-sm font-medium truncate group"
           >
-            <div className="h-2 w-2 rounded-full bg-green-500 lg:hidden" />
-            <span className="hidden lg:inline">Compute</span>
-          </Button>
+            <span className="truncate">{pipelineName}</span>
+            <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 flex-shrink-0" />
+          </button>
+        )}
+      </div>
+
+      <div className="flex items-center gap-1.5 flex-shrink-0">
+        {/* Catalog and Schema tags */}
+        <div className="flex items-center gap-1.5 text-sm text-muted-foreground flex-shrink-0">
+          <button
+            onClick={() => {
+              setTempCatalog(selectedCatalog);
+              setTempSchema(selectedSchema);
+              setIsConfigPanelOpen(true);
+            }}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/50 hover:bg-muted transition-colors cursor-pointer"
+            title="Configure catalog and schema"
+          >
+            <Database className="h-3 w-3" />
+            <span>{selectedCatalog}</span>
+          </button>
+          <span>·</span>
+          <button
+            onClick={() => {
+              setTempCatalog(selectedCatalog);
+              setTempSchema(selectedSchema);
+              setIsConfigPanelOpen(true);
+            }}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/50 hover:bg-muted transition-colors cursor-pointer"
+            title="Configure catalog and schema"
+          >
+            <Database className="h-3 w-3" />
+            <span>{selectedSchema}</span>
+          </button>
+        </div>
+        
+          {/* Overflow menu */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="h-7 w-7 p-0"
+                disabled={pipelineState.status === 'running' || pipelineState.status === 'stopping'}
+              >
+                <MoreVertical className="h-3.5 w-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem>
+                <Calendar className="h-3.5 w-3.5" />
+                Schedule
+              </DropdownMenuItem>
+              <DropdownMenuItem>
+                <Share2 className="h-3.5 w-3.5" />
+                Share
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem>
+                <ExternalLink className="h-3.5 w-3.5" />
+                Go to monitoring
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive">
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete pipeline
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          
+          {/* Compute button with tooltip */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="h-7 w-7 p-0"
+                disabled={pipelineState.status === 'running' || pipelineState.status === 'stopping'}
+              >
+                <div className="h-2 w-2 rounded-full bg-green-500" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Pipeline compute</p>
+            </TooltipContent>
+          </Tooltip>
+          
+          {/* Settings action */}
           <Button 
             variant="outline" 
             size="sm" 
@@ -4499,24 +4782,6 @@ FROM main.samples.${primaryTable};`;
           >
             <Settings className="h-3.5 w-3.5 lg:hidden" />
             <span className="hidden lg:inline">Settings</span>
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="h-7 gap-1.5"
-            disabled={pipelineState.status === 'running' || pipelineState.status === 'stopping'}
-          >
-            <Calendar className="h-3.5 w-3.5 lg:hidden" />
-            <span className="hidden lg:inline">Schedule</span>
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="h-7 gap-1.5"
-            disabled={pipelineState.status === 'running' || pipelineState.status === 'stopping'}
-          >
-            <Share2 className="h-3.5 w-3.5 lg:hidden" />
-            <span className="hidden lg:inline">Share</span>
           </Button>
           
           {/* Primary actions - Dry Run / Stop (for dry run) */}
@@ -4758,33 +5023,47 @@ FROM main.samples.${primaryTable};`;
                     );
                   })}
                 </div>
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="h-8 w-8 ml-1 flex-shrink-0"
-                  onClick={createNewFile}
-                  title="New file"
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-8 w-8 ml-1 flex-shrink-0"
+                      title="New file"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => createNewFile('transformation')}>
+                      <Zap className="h-3.5 w-3.5" />
+                      New transformation
+                    </DropdownMenuItem>
+                    <DropdownMenuItem>
+                      <FlaskConical className="h-3.5 w-3.5" />
+                      New exploration notebook
+                    </DropdownMenuItem>
+                    <DropdownMenuItem>
+                      <Wrench className="h-3.5 w-3.5" />
+                      New utility
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
 
               {/* Editor Toolbar */}
               <div className="flex items-center gap-2 px-3 py-1.5 border-b bg-card/50 flex-shrink-0">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" className="h-7 gap-1">
-                      <Play className="h-3 w-3" />
-                      Run file
-                      <ChevronDown className="h-3 w-3" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent>
-                    <DropdownMenuItem>Run file</DropdownMenuItem>
-                    <DropdownMenuItem>Run selected</DropdownMenuItem>
-                    <DropdownMenuItem>Run all above</DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="h-7 gap-1"
+                  disabled={!canRunPipeline() || pipelineState.status === 'running'}
+                  title={!canRunPipeline() ? "Add code to a file to run" : undefined}
+                  onClick={() => runSingleFile()}
+                >
+                  <Play className="h-3 w-3" />
+                  Run file
+                </Button>
 
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -4957,11 +5236,15 @@ FROM main.samples.${primaryTable};`;
                                   </div>
                                   <div className="rounded-lg bg-background border shadow-sm p-3">
                                     <div className="flex items-center gap-2">
-                                      <div className={`w-2 h-2 rounded-full ${
-                                        node.status === 'success' ? 'bg-green-500' :
-                                        node.status === 'warning' ? 'bg-yellow-500' :
-                                        node.status === 'failed' ? 'bg-red-500' : 'bg-gray-400'
-                                      }`} />
+                                      {node.status === 'skipped' ? (
+                                        <MinusCircle className="h-3.5 w-3.5 text-gray-400" />
+                                      ) : (
+                                        <div className={`w-2 h-2 rounded-full ${
+                                          node.status === 'success' ? 'bg-green-500' :
+                                          node.status === 'warning' ? 'bg-yellow-500' :
+                                          node.status === 'failed' ? 'bg-red-500' : 'bg-gray-400'
+                                        }`} />
+                                      )}
                                       <Gem className="h-3.5 w-3.5 text-muted-foreground" />
                                       <span className="font-medium text-sm truncate">{node.name}</span>
                                     </div>
@@ -5447,13 +5730,13 @@ def my_persisted_view():
                       // Preview Header - replaces main tabs when viewing table details
                       <>
                         <div className="flex items-center gap-3 px-3 min-w-0 flex-1">
-                          {/* Back Button - never wraps */}
+                          {/* Back Button - contextual based on source */}
                       <button 
                             className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors py-2 whitespace-nowrap flex-shrink-0"
                             onClick={closeTablePreview}
                           >
                             <ChevronLeft className="h-4 w-4 flex-shrink-0" />
-                            All tables
+                            {tablePreviewSource === 'graph' ? 'Back to Graph' : 'Back to All tables'}
                           </button>
                           
                           <div className="w-px h-4 bg-border flex-shrink-0" />
@@ -5471,7 +5754,7 @@ def my_persisted_view():
                               {tableResults.map(table => (
                                 <DropdownMenuItem 
                                   key={table.id}
-                                  onClick={() => openTablePreview(table)}
+                                  onClick={() => openTablePreview(table, tablePreviewSource)}
                                   className={table.id === selectedTableForPreview.id ? 'bg-accent' : ''}
                                 >
                                   <Table className="h-4 w-4 mr-2" />
@@ -6042,6 +6325,10 @@ def my_persisted_view():
                                     <div className="w-2 h-2 rounded-full bg-red-500 mr-2" />
                                     Failed
                                   </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => setTableStatusFilter('skipped')}>
+                                    <MinusCircle className="w-3 h-3 text-gray-500 mr-2" />
+                                    Skipped
+                                  </DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>
                               
@@ -6171,6 +6458,11 @@ def my_persisted_view():
                                         {result.status === 'failed' && (
                                           <div className="w-5 h-5 rounded-full bg-red-100 flex items-center justify-center mx-auto">
                                             <X className="w-3 h-3 text-red-600" />
+                                          </div>
+                                        )}
+                                        {result.status === 'skipped' && (
+                                          <div className="w-5 h-5 rounded-full bg-gray-100 flex items-center justify-center mx-auto">
+                                            <MinusCircle className="w-3 h-3 text-gray-500" />
                                           </div>
                                         )}
                                       </td>
@@ -6557,7 +6849,7 @@ def my_persisted_view():
                                           onClick={() => {
                                             const tableResult = tableResults.find(t => t.id === node.id);
                                             if (tableResult) {
-                                              openTablePreview(tableResult);
+                                              openTablePreview(tableResult, 'graph');
                                               setBottomPanelTab("tables");
                                             }
                                           }}
